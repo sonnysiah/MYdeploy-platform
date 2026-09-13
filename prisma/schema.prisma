@@ -1,0 +1,181 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String
+  password  String
+  role      Role     @default(ADMIN)
+  createdAt DateTime @default(now())
+
+  createdProfiles   DeploymentProfile[] @relation("ProfileCreator")
+  assignedApprovals ApprovalRequest[]   @relation("ApprovalAssignee")
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+enum Role {
+  ADMIN
+  MANAGER
+}
+
+model App {
+  id            String    @id @default(cuid())
+  name          String    @unique
+  displayName   String
+  description   String?
+  githubOrg     String
+  githubRepo    String
+  dockerImage   String?
+  defaultRegion String    @default("southeastasia")
+  status        AppStatus @default(DRAFT)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  profiles DeploymentProfile[]
+
+  @@map("apps")
+}
+
+enum AppStatus {
+  DRAFT
+  ACTIVE
+  DEPRECATED
+}
+
+model DeploymentProfile {
+  id           String        @id @default(cuid())
+  customerName String
+  tenantCode   String        @unique
+  tenantName   String
+  appName      String        @default("aid-dms")
+  appId        String?
+  appDomain    String
+  region       String        @default("southeastasia")
+  adminEmail   String
+  githubOrg    String
+  githubRepo   String
+  notes        String?
+  status       ProfileStatus @default(DRAFT)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  createdById  String
+
+  createdBy       User             @relation("ProfileCreator", fields: [createdById], references: [id])
+  app             App?             @relation(fields: [appId], references: [id])
+  approvalRequest ApprovalRequest?
+  deploymentJobs  DeploymentJob[]
+  notifications   Notification[]
+
+  @@map("deployment_profiles")
+}
+
+enum ProfileStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  DEPLOYING
+  DEPLOYED
+  FAILED
+}
+
+model ApprovalRequest {
+  id           String         @id @default(cuid())
+  profileId    String         @unique
+  assignedToId String
+  status       ApprovalStatus @default(PENDING)
+  notes        String?
+  decidedAt    DateTime?
+  createdAt    DateTime       @default(now())
+
+  profile    DeploymentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  assignedTo User              @relation("ApprovalAssignee", fields: [assignedToId], references: [id])
+
+  @@map("approval_requests")
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+model DeploymentJob {
+  id          String           @id @default(cuid())
+  profileId   String
+  githubRunId String?
+  status      DeploymentStatus @default(QUEUED)
+  logsUrl     String?
+  startedAt   DateTime         @default(now())
+  completedAt DateTime?
+
+  profile DeploymentProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+  steps   DeploymentStep[]
+
+  @@map("deployment_jobs")
+}
+
+enum DeploymentStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+model DeploymentStep {
+  id          String     @id @default(cuid())
+  jobId       String
+  name        String
+  status      StepStatus @default(PENDING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  logOutput   String?
+  order       Int
+
+  job DeploymentJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@map("deployment_steps")
+}
+
+enum StepStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+model Notification {
+  id        String           @id @default(cuid())
+  userId    String
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  profileId String?
+  createdAt DateTime         @default(now())
+
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  profile DeploymentProfile? @relation(fields: [profileId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+enum NotificationType {
+  APPROVAL_REQUESTED
+  APPROVAL_APPROVED
+  APPROVAL_REJECTED
+  DEPLOYMENT_STARTED
+  DEPLOYMENT_SUCCESS
+  DEPLOYMENT_FAILED
+}
